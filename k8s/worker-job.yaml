@@ -1,0 +1,114 @@
+# =============================================================================
+# Scanner Worker Job Template for Container Vulnerability Scanner
+# =============================================================================
+# This manifest serves as a TEMPLATE for scanner Jobs.
+# The actual Jobs are created dynamically by the API service using
+# the Kubernetes Python client. This file documents the Job structure.
+#
+# Security Design Decisions:
+# - Jobs run with minimal privileges
+# - Database credentials from Secrets
+# - TTL-based auto-cleanup prevents resource accumulation
+# - Resource limits prevent abuse
+#
+# DevOps Design Decisions:
+# - Jobs are ephemeral - created per scan, deleted after completion
+# - backoffLimit=0 prevents retry loops on failure
+# - ttlSecondsAfterFinished enables automatic cleanup
+#
+# NOTE: This file is for reference. The API creates Jobs programmatically.
+# =============================================================================
+
+---
+# Example Job (created dynamically by API)
+# This shows the structure - actual jobs have unique names
+apiVersion: batch/v1
+kind: Job
+metadata:
+  name: scan-example  # Actual: scan-<uuid>
+  namespace: default
+  labels:
+    app: vuln-scanner-worker
+    scan-id: "1"  # Links to database record
+spec:
+  # Auto-delete job after completion (1 hour)
+  ttlSecondsAfterFinished: 3600
+  # Don't retry on failure - we handle this in the worker
+  backoffLimit: 0
+  # Job timeout - fail if not complete in 30 minutes
+  activeDeadlineSeconds: 1800
+  template:
+    metadata:
+      labels:
+        app: vuln-scanner-worker
+    spec:
+      restartPolicy: Never
+      containers:
+        - name: scanner
+          # Custom worker image with Trivy + Python
+          image: vuln-scanner-worker:latest
+          imagePullPolicy: IfNotPresent
+          env:
+            # Scan-specific environment variables
+            - name: SCAN_ID
+              value: "1"  # Database scan ID
+            - name: IMAGE_NAME
+              value: "nginx:latest"  # Image to scan
+            # Database credentials from Secret
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: POSTGRES_HOST
+              value: "postgres"
+            - name: POSTGRES_PORT
+              value: "5432"
+            - name: POSTGRES_DB
+              value: "vulnscanner"
+            # Trivy configuration
+            - name: TRIVY_TIMEOUT
+              value: "600"  # 10 minutes
+            - name: TRIVY_SEVERITY
+              value: "CRITICAL,HIGH,MEDIUM,LOW,UNKNOWN"
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "1Gi"
+              cpu: "500m"
+          # Volume mounts for Trivy cache (optional, improves performance)
+          volumeMounts:
+            - name: trivy-cache
+              mountPath: /root/.cache
+      volumes:
+        # EmptyDir for Trivy's vulnerability database cache
+        - name: trivy-cache
+          emptyDir:
+            sizeLimit: 1Gi
+
+---
+# Optional: PersistentVolumeClaim for shared Trivy cache
+# This improves scan performance by caching the vulnerability database
+# across multiple scan jobs. Uncomment if needed.
+#
+# apiVersion: v1
+# kind: PersistentVolumeClaim
+# metadata:
+#   name: trivy-cache-pvc
+#   namespace: default
+#   labels:
+#     app: vuln-scanner
+#     component: worker
+# spec:
+#   accessModes:
+#     - ReadWriteMany  # Allow multiple jobs to read
+#   resources:
+#     requests:
+#       storage: 2Gi

@@ -1,0 +1,981 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Container Vulnerability Scanner</title>
+    <style>
+        /* =================================================================
+           Container Vulnerability Scanner - Dashboard Styles
+           
+           Design Philosophy:
+           - Clean, professional DevSecOps dashboard
+           - Clear visual hierarchy for vulnerability severity
+           - Responsive design for various screen sizes
+           - Accessible color contrast ratios
+           ================================================================= */
+        
+        :root {
+            /* Color palette - DevSecOps themed */
+            --color-bg: #0d1117;
+            --color-bg-secondary: #161b22;
+            --color-bg-tertiary: #21262d;
+            --color-border: #30363d;
+            --color-text: #c9d1d9;
+            --color-text-muted: #8b949e;
+            --color-text-heading: #f0f6fc;
+            --color-accent: #58a6ff;
+            --color-accent-hover: #79b8ff;
+            
+            /* Severity colors - CVSS standard */
+            --color-critical: #f85149;
+            --color-critical-bg: rgba(248, 81, 73, 0.15);
+            --color-high: #f0883e;
+            --color-high-bg: rgba(240, 136, 62, 0.15);
+            --color-medium: #d29922;
+            --color-medium-bg: rgba(210, 153, 34, 0.15);
+            --color-low: #3fb950;
+            --color-low-bg: rgba(63, 185, 80, 0.15);
+            --color-unknown: #8b949e;
+            --color-unknown-bg: rgba(139, 148, 158, 0.15);
+            
+            /* Status colors */
+            --color-pending: #d29922;
+            --color-running: #58a6ff;
+            --color-completed: #3fb950;
+            --color-failed: #f85149;
+        }
+        
+        * {
+            margin: 0;
+            padding: 0;
+            box-sizing: border-box;
+        }
+        
+        body {
+            font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, 'Helvetica Neue', Arial, sans-serif;
+            background-color: var(--color-bg);
+            color: var(--color-text);
+            line-height: 1.6;
+        }
+        
+        /* Header */
+        .header {
+            background-color: var(--color-bg-secondary);
+            border-bottom: 1px solid var(--color-border);
+            padding: 1rem 2rem;
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .header h1 {
+            color: var(--color-text-heading);
+            font-size: 1.5rem;
+            display: flex;
+            align-items: center;
+            gap: 0.5rem;
+        }
+        
+        .header h1 svg {
+            width: 28px;
+            height: 28px;
+            fill: var(--color-accent);
+        }
+        
+        /* Main container */
+        .container {
+            max-width: 1400px;
+            margin: 0 auto;
+            padding: 2rem;
+        }
+        
+        /* Stats cards */
+        .stats-grid {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 2rem;
+        }
+        
+        .stat-card {
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            text-align: center;
+        }
+        
+        .stat-card.critical { border-left: 4px solid var(--color-critical); }
+        .stat-card.high { border-left: 4px solid var(--color-high); }
+        .stat-card.medium { border-left: 4px solid var(--color-medium); }
+        .stat-card.low { border-left: 4px solid var(--color-low); }
+        
+        .stat-value {
+            font-size: 2.5rem;
+            font-weight: bold;
+            color: var(--color-text-heading);
+        }
+        
+        .stat-card.critical .stat-value { color: var(--color-critical); }
+        .stat-card.high .stat-value { color: var(--color-high); }
+        .stat-card.medium .stat-value { color: var(--color-medium); }
+        .stat-card.low .stat-value { color: var(--color-low); }
+        
+        .stat-label {
+            color: var(--color-text-muted);
+            font-size: 0.875rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+            margin-top: 0.5rem;
+        }
+        
+        /* Scan form */
+        .scan-form {
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            padding: 1.5rem;
+            margin-bottom: 2rem;
+        }
+        
+        .scan-form h2 {
+            color: var(--color-text-heading);
+            font-size: 1.125rem;
+            margin-bottom: 1rem;
+        }
+        
+        .form-row {
+            display: flex;
+            gap: 1rem;
+        }
+        
+        .form-input {
+            flex: 1;
+            padding: 0.75rem 1rem;
+            background-color: var(--color-bg-tertiary);
+            border: 1px solid var(--color-border);
+            border-radius: 6px;
+            color: var(--color-text);
+            font-size: 1rem;
+        }
+        
+        .form-input:focus {
+            outline: none;
+            border-color: var(--color-accent);
+            box-shadow: 0 0 0 3px rgba(88, 166, 255, 0.2);
+        }
+        
+        .form-input::placeholder {
+            color: var(--color-text-muted);
+        }
+        
+        .btn {
+            padding: 0.75rem 1.5rem;
+            background-color: var(--color-accent);
+            color: #fff;
+            border: none;
+            border-radius: 6px;
+            font-size: 1rem;
+            font-weight: 500;
+            cursor: pointer;
+            transition: background-color 0.2s;
+        }
+        
+        .btn:hover {
+            background-color: var(--color-accent-hover);
+        }
+        
+        .btn:disabled {
+            opacity: 0.6;
+            cursor: not-allowed;
+        }
+        
+        /* Sections */
+        .section {
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: 8px;
+            margin-bottom: 2rem;
+            overflow: hidden;
+        }
+        
+        .section-header {
+            background-color: var(--color-bg-tertiary);
+            padding: 1rem 1.5rem;
+            border-bottom: 1px solid var(--color-border);
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+        }
+        
+        .section-header h2 {
+            color: var(--color-text-heading);
+            font-size: 1.125rem;
+        }
+        
+        /* Filter buttons */
+        .filter-group {
+            display: flex;
+            gap: 0.5rem;
+        }
+        
+        .filter-btn {
+            padding: 0.375rem 0.75rem;
+            background-color: var(--color-bg-secondary);
+            border: 1px solid var(--color-border);
+            border-radius: 4px;
+            color: var(--color-text-muted);
+            font-size: 0.75rem;
+            cursor: pointer;
+            transition: all 0.2s;
+        }
+        
+        .filter-btn:hover, .filter-btn.active {
+            border-color: var(--color-accent);
+            color: var(--color-accent);
+        }
+        
+        .filter-btn.critical.active { border-color: var(--color-critical); color: var(--color-critical); }
+        .filter-btn.high.active { border-color: var(--color-high); color: var(--color-high); }
+        .filter-btn.medium.active { border-color: var(--color-medium); color: var(--color-medium); }
+        .filter-btn.low.active { border-color: var(--color-low); color: var(--color-low); }
+        
+        /* Tables */
+        .table-container {
+            overflow-x: auto;
+        }
+        
+        table {
+            width: 100%;
+            border-collapse: collapse;
+        }
+        
+        th, td {
+            padding: 0.875rem 1rem;
+            text-align: left;
+            border-bottom: 1px solid var(--color-border);
+        }
+        
+        th {
+            background-color: var(--color-bg-tertiary);
+            color: var(--color-text-muted);
+            font-weight: 500;
+            font-size: 0.75rem;
+            text-transform: uppercase;
+            letter-spacing: 0.05em;
+        }
+        
+        tr:hover {
+            background-color: var(--color-bg-tertiary);
+        }
+        
+        /* Severity badges */
+        .badge {
+            display: inline-block;
+            padding: 0.25rem 0.625rem;
+            border-radius: 4px;
+            font-size: 0.75rem;
+            font-weight: 600;
+            text-transform: uppercase;
+        }
+        
+        .badge-critical { background-color: var(--color-critical-bg); color: var(--color-critical); }
+        .badge-high { background-color: var(--color-high-bg); color: var(--color-high); }
+        .badge-medium { background-color: var(--color-medium-bg); color: var(--color-medium); }
+        .badge-low { background-color: var(--color-low-bg); color: var(--color-low); }
+        .badge-unknown { background-color: var(--color-unknown-bg); color: var(--color-unknown); }
+        
+        /* Status badges */
+        .status-pending { color: var(--color-pending); }
+        .status-running { color: var(--color-running); }
+        .status-completed { color: var(--color-completed); }
+        .status-failed { color: var(--color-failed); }
+        
+        /* Clickable rows */
+        .clickable-row {
+            cursor: pointer;
+        }
+        
+        /* Detail view */
+        .detail-header {
+            display: flex;
+            justify-content: space-between;
+            align-items: center;
+            margin-bottom: 1.5rem;
+        }
+        
+        .detail-header h2 {
+            color: var(--color-text-heading);
+            font-size: 1.25rem;
+        }
+        
+        .back-btn {
+            color: var(--color-accent);
+            text-decoration: none;
+            cursor: pointer;
+            font-size: 0.875rem;
+        }
+        
+        .back-btn:hover {
+            text-decoration: underline;
+        }
+        
+        .detail-info {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+            gap: 1rem;
+            margin-bottom: 1.5rem;
+            padding: 1.5rem;
+            background-color: var(--color-bg-tertiary);
+            border-radius: 8px;
+        }
+        
+        .detail-item {
+            display: flex;
+            flex-direction: column;
+            gap: 0.25rem;
+        }
+        
+        .detail-label {
+            color: var(--color-text-muted);
+            font-size: 0.75rem;
+            text-transform: uppercase;
+        }
+        
+        .detail-value {
+            color: var(--color-text-heading);
+            font-weight: 500;
+        }
+        
+        /* Loading indicator */
+        .loading {
+            text-align: center;
+            padding: 2rem;
+            color: var(--color-text-muted);
+        }
+        
+        .spinner {
+            display: inline-block;
+            width: 24px;
+            height: 24px;
+            border: 3px solid var(--color-border);
+            border-top-color: var(--color-accent);
+            border-radius: 50%;
+            animation: spin 1s linear infinite;
+        }
+        
+        @keyframes spin {
+            to { transform: rotate(360deg); }
+        }
+        
+        /* Alert messages */
+        .alert {
+            padding: 1rem;
+            border-radius: 6px;
+            margin-bottom: 1rem;
+        }
+        
+        .alert-success {
+            background-color: var(--color-low-bg);
+            color: var(--color-low);
+            border: 1px solid var(--color-low);
+        }
+        
+        .alert-error {
+            background-color: var(--color-critical-bg);
+            color: var(--color-critical);
+            border: 1px solid var(--color-critical);
+        }
+        
+        /* Empty state */
+        .empty-state {
+            text-align: center;
+            padding: 3rem;
+            color: var(--color-text-muted);
+        }
+        
+        .empty-state svg {
+            width: 64px;
+            height: 64px;
+            fill: var(--color-text-muted);
+            margin-bottom: 1rem;
+        }
+        
+        /* Truncate text */
+        .truncate {
+            max-width: 300px;
+            white-space: nowrap;
+            overflow: hidden;
+            text-overflow: ellipsis;
+        }
+        
+        /* Vulnerability description tooltip */
+        .vuln-title {
+            max-width: 400px;
+        }
+        
+        /* Hidden utility */
+        .hidden {
+            display: none !important;
+        }
+        
+        /* Responsive adjustments */
+        @media (max-width: 768px) {
+            .container {
+                padding: 1rem;
+            }
+            
+            .form-row {
+                flex-direction: column;
+            }
+            
+            .stats-grid {
+                grid-template-columns: repeat(2, 1fr);
+            }
+            
+            .filter-group {
+                flex-wrap: wrap;
+            }
+        }
+    </style>
+</head>
+<body>
+    <!-- Header -->
+    <header class="header">
+        <h1>
+            <svg viewBox="0 0 24 24" xmlns="http://www.w3.org/2000/svg">
+                <path d="M12 1L3 5v6c0 5.55 3.84 10.74 9 12 5.16-1.26 9-6.45 9-12V5l-9-4zm0 10.99h7c-.53 4.12-3.28 7.79-7 8.94V12H5V6.3l7-3.11v8.8z"/>
+            </svg>
+            Container Vulnerability Scanner
+        </h1>
+    </header>
+    
+    <main class="container">
+        <!-- Alert container -->
+        <div id="alert-container"></div>
+        
+        <!-- Main view (scans list) -->
+        <div id="main-view">
+            <!-- Statistics -->
+            <div class="stats-grid" id="stats-grid">
+                <div class="stat-card critical">
+                    <div class="stat-value" id="stat-critical">-</div>
+                    <div class="stat-label">Critical</div>
+                </div>
+                <div class="stat-card high">
+                    <div class="stat-value" id="stat-high">-</div>
+                    <div class="stat-label">High</div>
+                </div>
+                <div class="stat-card medium">
+                    <div class="stat-value" id="stat-medium">-</div>
+                    <div class="stat-label">Medium</div>
+                </div>
+                <div class="stat-card low">
+                    <div class="stat-value" id="stat-low">-</div>
+                    <div class="stat-label">Low</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-scans">-</div>
+                    <div class="stat-label">Total Scans</div>
+                </div>
+                <div class="stat-card">
+                    <div class="stat-value" id="stat-total-images">-</div>
+                    <div class="stat-label">Images Scanned</div>
+                </div>
+            </div>
+            
+            <!-- Scan Form -->
+            <div class="scan-form">
+                <h2>Submit New Scan</h2>
+                <form id="scan-form" class="form-row">
+                    <input 
+                        type="text" 
+                        id="image-input" 
+                        class="form-input" 
+                        placeholder="Enter Docker image (e.g., nginx:latest, python:3.9-slim)"
+                        required
+                    >
+                    <button type="submit" class="btn" id="scan-btn">
+                        Scan Image
+                    </button>
+                </form>
+            </div>
+            
+            <!-- Recent Scans -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>Recent Scans</h2>
+                    <button class="btn" onclick="loadScans()" style="padding: 0.5rem 1rem; font-size: 0.875rem;">
+                        Refresh
+                    </button>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>Image</th>
+                                <th>Status</th>
+                                <th>Critical</th>
+                                <th>High</th>
+                                <th>Medium</th>
+                                <th>Low</th>
+                                <th>Total</th>
+                                <th>Created</th>
+                            </tr>
+                        </thead>
+                        <tbody id="scans-table-body">
+                            <tr>
+                                <td colspan="8" class="loading">
+                                    <div class="spinner"></div>
+                                    <div style="margin-top: 0.5rem;">Loading scans...</div>
+                                </td>
+                            </tr>
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+        
+        <!-- Detail view (single scan) -->
+        <div id="detail-view" class="hidden">
+            <div class="detail-header">
+                <h2 id="detail-title">Scan Details</h2>
+                <a class="back-btn" onclick="showMainView()">← Back to Scans</a>
+            </div>
+            
+            <div class="detail-info" id="detail-info">
+                <!-- Populated by JavaScript -->
+            </div>
+            
+            <!-- Vulnerability stats for this scan -->
+            <div class="stats-grid" id="detail-stats" style="margin-bottom: 1.5rem;">
+                <!-- Populated by JavaScript -->
+            </div>
+            
+            <!-- Vulnerabilities table -->
+            <div class="section">
+                <div class="section-header">
+                    <h2>Vulnerabilities</h2>
+                    <div class="filter-group">
+                        <button class="filter-btn active" data-severity="all" onclick="filterVulns('all')">All</button>
+                        <button class="filter-btn critical" data-severity="CRITICAL" onclick="filterVulns('CRITICAL')">Critical</button>
+                        <button class="filter-btn high" data-severity="HIGH" onclick="filterVulns('HIGH')">High</button>
+                        <button class="filter-btn medium" data-severity="MEDIUM" onclick="filterVulns('MEDIUM')">Medium</button>
+                        <button class="filter-btn low" data-severity="LOW" onclick="filterVulns('LOW')">Low</button>
+                    </div>
+                </div>
+                <div class="table-container">
+                    <table>
+                        <thead>
+                            <tr>
+                                <th>CVE ID</th>
+                                <th>Severity</th>
+                                <th>Package</th>
+                                <th>Installed</th>
+                                <th>Fixed</th>
+                                <th>Title</th>
+                            </tr>
+                        </thead>
+                        <tbody id="vulns-table-body">
+                        </tbody>
+                    </table>
+                </div>
+            </div>
+        </div>
+    </main>
+    
+    <script>
+        // =================================================================
+        // Container Vulnerability Scanner - Dashboard JavaScript
+        //
+        // This script handles:
+        // - Fetching and displaying scan data from the API
+        // - Submitting new scan requests
+        // - Filtering vulnerabilities by severity
+        // - Auto-refresh for running scans
+        //
+        // Security Note: All data comes from the API, no hardcoded values
+        // =================================================================
+        
+        // API base URL - configure based on deployment
+        // In Kubernetes, this will be the API service URL
+        const API_BASE = window.location.hostname === 'localhost' 
+            ? 'http://localhost:8000' 
+            : '/api';  // Adjust based on your ingress configuration
+        
+        // Store current scan data for filtering
+        let currentScanData = null;
+        let allVulnerabilities = [];
+        
+        // Auto-refresh interval for running scans
+        let refreshInterval = null;
+        
+        // =================================================================
+        // Initialization
+        // =================================================================
+        
+        document.addEventListener('DOMContentLoaded', () => {
+            loadStats();
+            loadScans();
+            
+            // Set up form submission
+            document.getElementById('scan-form').addEventListener('submit', handleScanSubmit);
+        });
+        
+        // =================================================================
+        // API Functions
+        // =================================================================
+        
+        /**
+         * Fetch data from the API with error handling
+         */
+        async function apiRequest(endpoint, options = {}) {
+            try {
+                const response = await fetch(`${API_BASE}${endpoint}`, {
+                    headers: {
+                        'Content-Type': 'application/json',
+                        ...options.headers
+                    },
+                    ...options
+                });
+                
+                if (!response.ok) {
+                    const error = await response.json().catch(() => ({ detail: 'Unknown error' }));
+                    throw new Error(error.detail || `HTTP ${response.status}`);
+                }
+                
+                return await response.json();
+            } catch (error) {
+                console.error(`API Error (${endpoint}):`, error);
+                throw error;
+            }
+        }
+        
+        /**
+         * Load dashboard statistics
+         */
+        async function loadStats() {
+            try {
+                const stats = await apiRequest('/stats');
+                
+                document.getElementById('stat-critical').textContent = stats.critical_count || 0;
+                document.getElementById('stat-high').textContent = stats.high_count || 0;
+                document.getElementById('stat-medium').textContent = stats.medium_count || 0;
+                document.getElementById('stat-low').textContent = stats.low_count || 0;
+                document.getElementById('stat-total-scans').textContent = stats.total_scans || 0;
+                document.getElementById('stat-total-images').textContent = stats.total_images || 0;
+            } catch (error) {
+                showAlert('Failed to load statistics: ' + error.message, 'error');
+            }
+        }
+        
+        /**
+         * Load recent scans
+         */
+        async function loadScans() {
+            const tbody = document.getElementById('scans-table-body');
+            tbody.innerHTML = `
+                <tr>
+                    <td colspan="8" class="loading">
+                        <div class="spinner"></div>
+                        <div style="margin-top: 0.5rem;">Loading scans...</div>
+                    </td>
+                </tr>
+            `;
+            
+            try {
+                const scans = await apiRequest('/scans?limit=50');
+                
+                if (scans.length === 0) {
+                    tbody.innerHTML = `
+                        <tr>
+                            <td colspan="8" class="empty-state">
+                                <svg viewBox="0 0 24 24">
+                                    <path d="M19 3H5c-1.1 0-2 .9-2 2v14c0 1.1.9 2 2 2h14c1.1 0 2-.9 2-2V5c0-1.1-.9-2-2-2zm-7 14h-2v-2h2v2zm0-4h-2V7h2v6z"/>
+                                </svg>
+                                <p>No scans yet. Submit an image above to get started.</p>
+                            </td>
+                        </tr>
+                    `;
+                    return;
+                }
+                
+                tbody.innerHTML = scans.map(scan => `
+                    <tr class="clickable-row" onclick="showScanDetail(${scan.id})">
+                        <td class="truncate" title="${escapeHtml(scan.image_name)}">${escapeHtml(scan.image_name)}</td>
+                        <td><span class="status-${scan.status}">${capitalizeFirst(scan.status)}</span></td>
+                        <td>${scan.status === 'completed' ? scan.critical_count : '-'}</td>
+                        <td>${scan.status === 'completed' ? scan.high_count : '-'}</td>
+                        <td>${scan.status === 'completed' ? scan.medium_count : '-'}</td>
+                        <td>${scan.status === 'completed' ? scan.low_count : '-'}</td>
+                        <td>${scan.status === 'completed' ? scan.total_count : '-'}</td>
+                        <td>${formatDate(scan.created_at)}</td>
+                    </tr>
+                `).join('');
+                
+                // Check if any scans are running and set up auto-refresh
+                const hasRunningScans = scans.some(s => s.status === 'pending' || s.status === 'running');
+                if (hasRunningScans && !refreshInterval) {
+                    refreshInterval = setInterval(() => {
+                        loadStats();
+                        loadScans();
+                    }, 5000);  // Refresh every 5 seconds
+                } else if (!hasRunningScans && refreshInterval) {
+                    clearInterval(refreshInterval);
+                    refreshInterval = null;
+                }
+                
+            } catch (error) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="8" class="empty-state">
+                            <p style="color: var(--color-critical);">Failed to load scans: ${escapeHtml(error.message)}</p>
+                            <button class="btn" onclick="loadScans()" style="margin-top: 1rem;">Retry</button>
+                        </td>
+                    </tr>
+                `;
+            }
+        }
+        
+        /**
+         * Submit a new scan
+         */
+        async function handleScanSubmit(event) {
+            event.preventDefault();
+            
+            const input = document.getElementById('image-input');
+            const button = document.getElementById('scan-btn');
+            const imageName = input.value.trim();
+            
+            if (!imageName) {
+                showAlert('Please enter a Docker image name', 'error');
+                return;
+            }
+            
+            button.disabled = true;
+            button.textContent = 'Submitting...';
+            
+            try {
+                const result = await apiRequest('/scan', {
+                    method: 'POST',
+                    body: JSON.stringify({ image_name: imageName })
+                });
+                
+                showAlert(`Scan queued: ${result.message}`, 'success');
+                input.value = '';
+                
+                // Reload scans and stats
+                loadStats();
+                loadScans();
+                
+            } catch (error) {
+                showAlert('Failed to submit scan: ' + error.message, 'error');
+            } finally {
+                button.disabled = false;
+                button.textContent = 'Scan Image';
+            }
+        }
+        
+        /**
+         * Show scan detail view
+         */
+        async function showScanDetail(scanId) {
+            document.getElementById('main-view').classList.add('hidden');
+            document.getElementById('detail-view').classList.remove('hidden');
+            
+            const infoDiv = document.getElementById('detail-info');
+            const statsDiv = document.getElementById('detail-stats');
+            const tbody = document.getElementById('vulns-table-body');
+            
+            // Show loading state
+            infoDiv.innerHTML = '<div class="loading"><div class="spinner"></div></div>';
+            tbody.innerHTML = '<tr><td colspan="6" class="loading"><div class="spinner"></div></td></tr>';
+            
+            try {
+                const scan = await apiRequest(`/scan/${scanId}`);
+                currentScanData = scan;
+                allVulnerabilities = scan.vulnerabilities || [];
+                
+                // Update title
+                document.getElementById('detail-title').textContent = `Scan: ${scan.image_name}`;
+                
+                // Update info
+                infoDiv.innerHTML = `
+                    <div class="detail-item">
+                        <span class="detail-label">Image</span>
+                        <span class="detail-value">${escapeHtml(scan.image_name)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Status</span>
+                        <span class="detail-value status-${scan.status}">${capitalizeFirst(scan.status)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Job Name</span>
+                        <span class="detail-value">${escapeHtml(scan.job_name || 'N/A')}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Created</span>
+                        <span class="detail-value">${formatDate(scan.created_at)}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Started</span>
+                        <span class="detail-value">${scan.started_at ? formatDate(scan.started_at) : 'N/A'}</span>
+                    </div>
+                    <div class="detail-item">
+                        <span class="detail-label">Completed</span>
+                        <span class="detail-value">${scan.completed_at ? formatDate(scan.completed_at) : 'N/A'}</span>
+                    </div>
+                    ${scan.error_message ? `
+                        <div class="detail-item" style="grid-column: 1 / -1;">
+                            <span class="detail-label">Error</span>
+                            <span class="detail-value" style="color: var(--color-critical);">${escapeHtml(scan.error_message)}</span>
+                        </div>
+                    ` : ''}
+                `;
+                
+                // Update stats
+                statsDiv.innerHTML = `
+                    <div class="stat-card critical">
+                        <div class="stat-value">${scan.critical_count}</div>
+                        <div class="stat-label">Critical</div>
+                    </div>
+                    <div class="stat-card high">
+                        <div class="stat-value">${scan.high_count}</div>
+                        <div class="stat-label">High</div>
+                    </div>
+                    <div class="stat-card medium">
+                        <div class="stat-value">${scan.medium_count}</div>
+                        <div class="stat-label">Medium</div>
+                    </div>
+                    <div class="stat-card low">
+                        <div class="stat-value">${scan.low_count}</div>
+                        <div class="stat-label">Low</div>
+                    </div>
+                `;
+                
+                // Update vulnerabilities table
+                renderVulnerabilities(allVulnerabilities);
+                
+                // Reset filter buttons
+                document.querySelectorAll('.filter-btn').forEach(btn => {
+                    btn.classList.remove('active');
+                    if (btn.dataset.severity === 'all') btn.classList.add('active');
+                });
+                
+            } catch (error) {
+                infoDiv.innerHTML = `<p style="color: var(--color-critical);">Failed to load scan: ${escapeHtml(error.message)}</p>`;
+            }
+        }
+        
+        /**
+         * Render vulnerabilities table
+         */
+        function renderVulnerabilities(vulns) {
+            const tbody = document.getElementById('vulns-table-body');
+            
+            if (vulns.length === 0) {
+                tbody.innerHTML = `
+                    <tr>
+                        <td colspan="6" class="empty-state">
+                            <p>No vulnerabilities found${currentScanData?.status === 'completed' ? ' - Image is clean!' : ''}</p>
+                        </td>
+                    </tr>
+                `;
+                return;
+            }
+            
+            // Sort by severity (CRITICAL > HIGH > MEDIUM > LOW > UNKNOWN)
+            const severityOrder = { CRITICAL: 0, HIGH: 1, MEDIUM: 2, LOW: 3, UNKNOWN: 4 };
+            vulns.sort((a, b) => (severityOrder[a.severity] || 5) - (severityOrder[b.severity] || 5));
+            
+            tbody.innerHTML = vulns.map(vuln => `
+                <tr>
+                    <td><a href="https://nvd.nist.gov/vuln/detail/${escapeHtml(vuln.vulnerability_id)}" target="_blank" style="color: var(--color-accent);">${escapeHtml(vuln.vulnerability_id)}</a></td>
+                    <td><span class="badge badge-${vuln.severity.toLowerCase()}">${vuln.severity}</span></td>
+                    <td>${escapeHtml(vuln.package_name)}</td>
+                    <td>${escapeHtml(vuln.installed_version || 'N/A')}</td>
+                    <td>${escapeHtml(vuln.fixed_version || 'N/A')}</td>
+                    <td class="vuln-title truncate" title="${escapeHtml(vuln.title || '')}">${escapeHtml(vuln.title || 'N/A')}</td>
+                </tr>
+            `).join('');
+        }
+        
+        /**
+         * Filter vulnerabilities by severity
+         */
+        function filterVulns(severity) {
+            // Update active button
+            document.querySelectorAll('.filter-btn').forEach(btn => {
+                btn.classList.remove('active');
+                if (btn.dataset.severity === severity) btn.classList.add('active');
+            });
+            
+            // Filter and render
+            if (severity === 'all') {
+                renderVulnerabilities(allVulnerabilities);
+            } else {
+                const filtered = allVulnerabilities.filter(v => v.severity === severity);
+                renderVulnerabilities(filtered);
+            }
+        }
+        
+        /**
+         * Show main view (hide detail)
+         */
+        function showMainView() {
+            document.getElementById('main-view').classList.remove('hidden');
+            document.getElementById('detail-view').classList.add('hidden');
+            currentScanData = null;
+            allVulnerabilities = [];
+        }
+        
+        // =================================================================
+        // Utility Functions
+        // =================================================================
+        
+        /**
+         * Show alert message
+         */
+        function showAlert(message, type = 'success') {
+            const container = document.getElementById('alert-container');
+            const alert = document.createElement('div');
+            alert.className = `alert alert-${type}`;
+            alert.textContent = message;
+            container.appendChild(alert);
+            
+            // Auto-dismiss after 5 seconds
+            setTimeout(() => {
+                alert.remove();
+            }, 5000);
+        }
+        
+        /**
+         * Escape HTML to prevent XSS
+         */
+        function escapeHtml(text) {
+            if (!text) return '';
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+        
+        /**
+         * Capitalize first letter
+         */
+        function capitalizeFirst(str) {
+            if (!str) return '';
+            return str.charAt(0).toUpperCase() + str.slice(1);
+        }
+        
+        /**
+         * Format date for display
+         */
+        function formatDate(dateStr) {
+            if (!dateStr) return 'N/A';
+            const date = new Date(dateStr);
+            return date.toLocaleString();
+        }
+    </script>
+</body>
+</html>

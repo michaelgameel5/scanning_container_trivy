@@ -1,0 +1,167 @@
+# =============================================================================
+# Dashboard Deployment for Container Vulnerability Scanner
+# =============================================================================
+# This manifest deploys the web dashboard with:
+# - nginx serving static files
+# - Proxy to API for backend requests
+# - External access via NodePort (KinD) or Ingress (production)
+#
+# Security Design Decisions:
+# - Static files only - no server-side code execution
+# - API proxy handles CORS properly
+# - Security headers configured in nginx
+#
+# DevOps Design Decisions:
+# - Multiple replicas for availability
+# - Health checks for reliability
+# - Resource limits for cluster stability
+# =============================================================================
+
+---
+# Dashboard Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vuln-scanner-dashboard
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: dashboard
+spec:
+  replicas: 2
+  selector:
+    matchLabels:
+      app: vuln-scanner
+      component: dashboard
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0
+  template:
+    metadata:
+      labels:
+        app: vuln-scanner
+        component: dashboard
+    spec:
+      containers:
+        - name: dashboard
+          image: vuln-scanner-dashboard:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+          resources:
+            requests:
+              memory: "64Mi"
+              cpu: "50m"
+            limits:
+              memory: "128Mi"
+              cpu: "200m"
+          # Liveness probe
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness probe
+          readinessProbe:
+            httpGet:
+              path: /health
+              port: 80
+            initialDelaySeconds: 2
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Security context
+          securityContext:
+            readOnlyRootFilesystem: false
+
+---
+# ClusterIP Service for internal access
+apiVersion: v1
+kind: Service
+metadata:
+  name: vuln-scanner-dashboard
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: dashboard
+spec:
+  type: ClusterIP
+  ports:
+    - port: 80
+      targetPort: 80
+      protocol: TCP
+      name: http
+  selector:
+    app: vuln-scanner
+    component: dashboard
+
+---
+# NodePort Service for external access (development/KinD)
+apiVersion: v1
+kind: Service
+metadata:
+  name: vuln-scanner-dashboard-nodeport
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: dashboard
+spec:
+  type: NodePort
+  ports:
+    - port: 80
+      targetPort: 80
+      nodePort: 30081  # Access via localhost:30081 on KinD
+      protocol: TCP
+      name: http
+  selector:
+    app: vuln-scanner
+    component: dashboard
+
+---
+# Optional: Ingress for production deployment
+# Uncomment and configure for your domain
+# apiVersion: networking.k8s.io/v1
+# kind: Ingress
+# metadata:
+#   name: vuln-scanner-ingress
+#   namespace: default
+#   labels:
+#     app: vuln-scanner
+#   annotations:
+#     # nginx ingress controller annotations
+#     nginx.ingress.kubernetes.io/rewrite-target: /
+#     nginx.ingress.kubernetes.io/ssl-redirect: "true"
+#     # cert-manager for TLS
+#     cert-manager.io/cluster-issuer: "letsencrypt-prod"
+# spec:
+#   ingressClassName: nginx
+#   tls:
+#     - hosts:
+#         - vuln-scanner.example.com
+#       secretName: vuln-scanner-tls
+#   rules:
+#     - host: vuln-scanner.example.com
+#       http:
+#         paths:
+#           # Dashboard
+#           - path: /
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: vuln-scanner-dashboard
+#                 port:
+#                   number: 80
+#           # API direct access (alternative to nginx proxy)
+#           - path: /api
+#             pathType: Prefix
+#             backend:
+#               service:
+#                 name: vuln-scanner-api
+#                 port:
+#                   number: 8000

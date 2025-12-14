@@ -1,0 +1,212 @@
+# =============================================================================
+# PostgreSQL Deployment for Container Vulnerability Scanner
+# =============================================================================
+# This manifest deploys PostgreSQL with:
+# - Persistent storage for data durability
+# - Secret-based credential management
+# - Health checks for reliability
+# - Resource limits for cluster stability
+#
+# Security Design Decisions:
+# - Credentials stored in Kubernetes Secrets (base64 encoded)
+# - Internal ClusterIP service (not exposed externally)
+# - Data stored on PersistentVolume for durability
+#
+# DevOps Design Decisions:
+# - Single replica for development (use StatefulSet for production HA)
+# - Probes ensure database is healthy before accepting connections
+# - Resource requests/limits prevent noisy neighbor issues
+# =============================================================================
+
+---
+# Secret for PostgreSQL credentials
+# In production, use external secret management (Vault, AWS Secrets Manager, etc.)
+apiVersion: v1
+kind: Secret
+metadata:
+  name: postgres-credentials
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: database
+type: Opaque
+# Note: In production, encrypt these secrets at rest with KMS
+# Values are base64 encoded: echo -n 'value' | base64
+data:
+  # username: vulnscanner
+  username: dnVsbnNjYW5uZXI=
+  # password: vulnscanner_secret_2024
+  password: dnVsbnNjYW5uZXJfc2VjcmV0XzIwMjQ=
+  # database: vulnscanner
+  database: dnVsbnNjYW5uZXI=
+
+---
+# ConfigMap for PostgreSQL initialization
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: postgres-init
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: database
+data:
+  # This script runs on first database initialization
+  init.sql: |
+    -- PostgreSQL initialization script for Container Vulnerability Scanner
+    -- This runs automatically when the database is first created
+    
+    -- Ensure the database exists (may already be created by POSTGRES_DB env var)
+    -- CREATE DATABASE IF NOT EXISTS is not standard SQL, so we skip this
+    
+    -- Grant privileges to the application user
+    -- (User is created automatically by POSTGRES_USER env var)
+    
+    -- The application will create tables via SQLAlchemy ORM
+    -- This script is here for any additional setup needed
+    
+    -- Example: Create indexes for performance (optional, done by SQLAlchemy)
+    -- CREATE INDEX IF NOT EXISTS idx_vulnerabilities_severity ON vulnerabilities(severity);
+    -- CREATE INDEX IF NOT EXISTS idx_scans_status ON scans(status);
+
+---
+# PersistentVolumeClaim for PostgreSQL data
+# This ensures data survives pod restarts
+apiVersion: v1
+kind: PersistentVolumeClaim
+metadata:
+  name: postgres-pvc
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: database
+spec:
+  accessModes:
+    - ReadWriteOnce  # Only one pod can write at a time
+  resources:
+    requests:
+      storage: 5Gi  # Adjust based on expected data volume
+  # StorageClass is optional - uses cluster default if not specified
+  # For KinD, the default storage class works fine
+  # storageClassName: standard
+
+---
+# PostgreSQL Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: postgres
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: database
+spec:
+  replicas: 1  # Single replica for development; use StatefulSet for HA
+  selector:
+    matchLabels:
+      app: vuln-scanner
+      component: database
+  strategy:
+    type: Recreate  # Required for RWO volumes - don't run multiple pods
+  template:
+    metadata:
+      labels:
+        app: vuln-scanner
+        component: database
+    spec:
+      containers:
+        - name: postgres
+          image: postgres:15-alpine  # Alpine for smaller image size
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 5432
+              name: postgres
+          # Environment variables from Secret
+          env:
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+            - name: POSTGRES_DB
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: database
+            # Data directory within the volume mount
+            - name: PGDATA
+              value: /var/lib/postgresql/data/pgdata
+          # Volume mounts
+          volumeMounts:
+            - name: postgres-data
+              mountPath: /var/lib/postgresql/data
+            - name: postgres-init
+              mountPath: /docker-entrypoint-initdb.d
+          # Resource limits
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # Liveness probe - is the database running?
+          livenessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - vulnscanner
+                - -d
+                - vulnscanner
+            initialDelaySeconds: 30
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness probe - is the database ready for connections?
+          readinessProbe:
+            exec:
+              command:
+                - pg_isready
+                - -U
+                - vulnscanner
+                - -d
+                - vulnscanner
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+      volumes:
+        - name: postgres-data
+          persistentVolumeClaim:
+            claimName: postgres-pvc
+        - name: postgres-init
+          configMap:
+            name: postgres-init
+
+---
+# Service for PostgreSQL
+# ClusterIP type - only accessible within the cluster
+apiVersion: v1
+kind: Service
+metadata:
+  name: postgres
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: database
+spec:
+  type: ClusterIP  # Internal only - not exposed outside cluster
+  ports:
+    - port: 5432
+      targetPort: 5432
+      protocol: TCP
+      name: postgres
+  selector:
+    app: vuln-scanner
+    component: database

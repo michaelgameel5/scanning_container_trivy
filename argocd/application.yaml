@@ -1,0 +1,144 @@
+# =============================================================================
+# ArgoCD Application for Container Vulnerability Scanner
+# =============================================================================
+# This manifest defines the ArgoCD Application resource that enables
+# GitOps-style deployment of the vulnerability scanner platform.
+#
+# GitOps Design Decisions:
+# - Git repository is the single source of truth
+# - Auto-sync enabled for continuous deployment
+# - Self-heal enabled to correct drift
+# - Prune enabled to remove orphaned resources
+#
+# How it works:
+# 1. Push changes to Git repository
+# 2. ArgoCD detects changes (webhook or polling)
+# 3. ArgoCD applies changes to Kubernetes cluster
+# 4. ArgoCD monitors and reports sync status
+# =============================================================================
+
+---
+apiVersion: argoproj.io/v1alpha1
+kind: Application
+metadata:
+  name: vuln-scanner
+  # ArgoCD applications must be in the argocd namespace
+  namespace: argocd
+  labels:
+    app: vuln-scanner
+    environment: development
+  # Finalizer ensures proper cleanup when Application is deleted
+  finalizers:
+    - resources-finalizer.argocd.argoproj.io
+spec:
+  # The project this application belongs to
+  # 'default' project allows deployment to any namespace/cluster
+  project: default
+  
+  # Source repository configuration
+  source:
+    # IMPORTANT: Update this URL to your Git repository
+    # Can be HTTPS or SSH URL
+    repoURL: https://github.com/michaelgameel5/scanning_container_trivy.git
+    
+    # Branch, tag, or commit to track
+    targetRevision: main
+    
+    # Path to Kubernetes manifests within the repository
+    path: k8s
+    
+    # Directory configuration (for plain YAML manifests)
+    directory:
+      recurse: false  # Don't recurse into subdirectories
+      # Include all YAML files
+      include: '*.yaml'
+  
+  # Destination cluster and namespace
+  destination:
+    # 'https://kubernetes.default.svc' means the same cluster ArgoCD is in
+    server: https://kubernetes.default.svc
+    # Namespace where resources will be deployed
+    namespace: default
+  
+  # Sync policy - how ArgoCD handles changes
+  syncPolicy:
+    # Automated sync - ArgoCD automatically applies changes from Git
+    automated:
+      # Prune: Delete resources that are no longer in Git
+      prune: true
+      # Self-heal: Revert manual changes made outside of Git
+      selfHeal: true
+      # Allow empty: Sync even if there are no resources
+      allowEmpty: false
+    
+    # Sync options
+    syncOptions:
+      # Create namespace if it doesn't exist
+      - CreateNamespace=true
+      # Validate manifests before applying
+      - Validate=true
+      # Prune last: Delete resources after creating new ones
+      - PruneLast=true
+      # Apply out of sync only: Don't re-apply unchanged resources
+      - ApplyOutOfSyncOnly=true
+      # Server-side apply: Use server-side apply for better conflict handling
+      - ServerSideApply=false
+    
+    # Retry configuration for failed syncs
+    retry:
+      limit: 5
+      backoff:
+        duration: 5s
+        factor: 2
+        maxDuration: 3m
+  
+  # Ignore differences in certain fields (optional)
+  # Useful for fields that change frequently but shouldn't trigger sync
+  ignoreDifferences:
+    - group: apps
+      kind: Deployment
+      jsonPointers:
+        - /spec/replicas  # Ignore replica count changes (e.g., from HPA)
+  
+  # Health checks for custom resources (optional)
+  # ArgoCD has built-in health checks for common resources
+
+---
+# Optional: ArgoCD Project for better access control
+# Uncomment for production environments with multiple teams
+# apiVersion: argoproj.io/v1alpha1
+# kind: AppProject
+# metadata:
+#   name: vuln-scanner-project
+#   namespace: argocd
+# spec:
+#   description: Container Vulnerability Scanner Project
+#   
+#   # Source repositories allowed for this project
+#   sourceRepos:
+#     - https://github.com/YOUR_USERNAME/container-vuln-scanner.git
+#   
+#   # Destination clusters and namespaces allowed
+#   destinations:
+#     - namespace: default
+#       server: https://kubernetes.default.svc
+#     - namespace: vuln-scanner
+#       server: https://kubernetes.default.svc
+#   
+#   # Cluster resources this project can manage
+#   clusterResourceWhitelist:
+#     - group: ''
+#       kind: Namespace
+#   
+#   # Namespace resources this project can manage
+#   namespaceResourceWhitelist:
+#     - group: '*'
+#       kind: '*'
+#   
+#   # Roles for this project
+#   roles:
+#     - name: developer
+#       description: Developer access
+#       policies:
+#         - p, proj:vuln-scanner-project:developer, applications, get, vuln-scanner-project/*, allow
+#         - p, proj:vuln-scanner-project:developer, applications, sync, vuln-scanner-project/*, allow

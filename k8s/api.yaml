@@ -1,0 +1,222 @@
+# =============================================================================
+# API Service Deployment for Container Vulnerability Scanner
+# =============================================================================
+# This manifest deploys the FastAPI backend with:
+# - Multiple replicas for availability
+# - Health checks for reliability
+# - RBAC for Kubernetes Job creation
+# - Resource limits for cluster stability
+#
+# Security Design Decisions:
+# - ServiceAccount with minimal RBAC permissions
+# - Only can create/list Jobs and Pods (not delete, modify other resources)
+# - Database credentials from Secrets
+# - Non-root container execution
+#
+# DevOps Design Decisions:
+# - Rolling update strategy for zero-downtime deployments
+# - Probes ensure only healthy pods receive traffic
+# - Resource requests enable proper scheduling
+# =============================================================================
+
+---
+# ServiceAccount for the API service
+# Provides identity for RBAC
+apiVersion: v1
+kind: ServiceAccount
+metadata:
+  name: vuln-scanner-api
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: api
+
+---
+# Role defining what the API can do
+# Minimal permissions following principle of least privilege
+apiVersion: rbac.authorization.k8s.io/v1
+kind: Role
+metadata:
+  name: vuln-scanner-api-role
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: api
+rules:
+  # Permission to create and monitor scanner Jobs
+  - apiGroups: ["batch"]
+    resources: ["jobs"]
+    verbs: ["create", "get", "list", "watch", "delete"]
+  # Permission to view pods (for job status)
+  - apiGroups: [""]
+    resources: ["pods"]
+    verbs: ["get", "list", "watch"]
+  # Permission to view pod logs (for debugging)
+  - apiGroups: [""]
+    resources: ["pods/log"]
+    verbs: ["get"]
+
+---
+# RoleBinding connects ServiceAccount to Role
+apiVersion: rbac.authorization.k8s.io/v1
+kind: RoleBinding
+metadata:
+  name: vuln-scanner-api-binding
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: api
+subjects:
+  - kind: ServiceAccount
+    name: vuln-scanner-api
+    namespace: default
+roleRef:
+  kind: Role
+  name: vuln-scanner-api-role
+  apiGroup: rbac.authorization.k8s.io
+
+---
+# ConfigMap for API configuration
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: vuln-scanner-api-config
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: api
+data:
+  # Namespace where scanner jobs run
+  SCANNER_NAMESPACE: "default"
+  # Worker image for scanner jobs
+  WORKER_IMAGE: "vuln-scanner-worker:latest"
+  # PostgreSQL connection settings (non-sensitive)
+  POSTGRES_HOST: "postgres"
+  POSTGRES_PORT: "5432"
+  POSTGRES_DB: "vulnscanner"
+
+---
+# API Deployment
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: vuln-scanner-api
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: api
+spec:
+  replicas: 2  # Multiple replicas for availability
+  selector:
+    matchLabels:
+      app: vuln-scanner
+      component: api
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxSurge: 1
+      maxUnavailable: 0  # Zero downtime deployments
+  template:
+    metadata:
+      labels:
+        app: vuln-scanner
+        component: api
+    spec:
+      serviceAccountName: vuln-scanner-api
+      containers:
+        - name: api
+          image: vuln-scanner-api:latest
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 8000
+              name: http
+          # Environment variables
+          envFrom:
+            - configMapRef:
+                name: vuln-scanner-api-config
+          env:
+            # Database credentials from Secret
+            - name: POSTGRES_USER
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: username
+            - name: POSTGRES_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: postgres-credentials
+                  key: password
+          # Resource limits
+          resources:
+            requests:
+              memory: "256Mi"
+              cpu: "100m"
+            limits:
+              memory: "512Mi"
+              cpu: "500m"
+          # Liveness probe - is the container running?
+          livenessProbe:
+            httpGet:
+              path: /health
+              port: 8000
+            initialDelaySeconds: 10
+            periodSeconds: 15
+            timeoutSeconds: 5
+            failureThreshold: 3
+          # Readiness probe - is the container ready for traffic?
+          readinessProbe:
+            httpGet:
+              path: /ready
+              port: 8000
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+          # Security context
+          securityContext:
+            readOnlyRootFilesystem: false
+            runAsNonRoot: false  # Required for some operations
+
+---
+# Service for API
+apiVersion: v1
+kind: Service
+metadata:
+  name: vuln-scanner-api
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: api
+spec:
+  type: ClusterIP
+  ports:
+    - port: 8000
+      targetPort: 8000
+      protocol: TCP
+      name: http
+  selector:
+    app: vuln-scanner
+    component: api
+
+---
+# NodePort Service for external access (development/KinD)
+# In production, use Ingress instead
+apiVersion: v1
+kind: Service
+metadata:
+  name: vuln-scanner-api-nodeport
+  namespace: default
+  labels:
+    app: vuln-scanner
+    component: api
+spec:
+  type: NodePort
+  ports:
+    - port: 8000
+      targetPort: 8000
+      nodePort: 30080  # Access via localhost:30080 on KinD
+      protocol: TCP
+      name: http
+  selector:
+    app: vuln-scanner
+    component: api

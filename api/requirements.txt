@@ -1,0 +1,20 @@
+# FastAPI and web server
+fastapi==0.104.1
+uvicorn==0.24.0
+
+# Database
+sqlalchemy==2.0.23
+psycopg2-binary==2.9.9
+
+# Validation
+pydantic==2.5.2
+pydantic-settings==2.1.0
+
+# Kubernetes client for dynamic Job creation
+kubernetes==28.1.0
+
+# HTTP client (for internal API calls if needed)
+httpx==0.25.2
+
+# Environment variables
+python-dotenv==1.0.0
