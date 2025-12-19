@@ -378,6 +378,49 @@ async def get_scan(scan_id: int, db: Session = Depends(get_db)):
     )
 
 
+@app.delete("/scan/{scan_id}", tags=["Scans"])
+async def delete_scan(scan_id: int, db: Session = Depends(get_db)):
+    """
+    Delete a scan and its associated Kubernetes job.
+    
+    This endpoint:
+    1. Deletes the Kubernetes Job (if still running)
+    2. Deletes all vulnerabilities associated with the scan
+    3. Deletes the scan record from the database
+    
+    **Path Parameters:**
+    - `scan_id`: The unique identifier of the scan to delete
+    """
+    # Find the scan
+    scan = db.query(Scan).filter(Scan.id == scan_id).first()
+    if not scan:
+        raise HTTPException(status_code=404, detail=f"Scan with ID {scan_id} not found")
+    
+    # Try to delete the Kubernetes Job if it exists
+    if scan.job_name:
+        try:
+            batch_api = get_k8s_client()
+            batch_api.delete_namespaced_job(
+                name=scan.job_name,
+                namespace=SCANNER_NAMESPACE,
+                body=client.V1DeleteOptions(propagation_policy='Background')
+            )
+            logger.info(f"Deleted Kubernetes Job: {scan.job_name}")
+        except ApiException as e:
+            if e.status != 404:  # Ignore if job already deleted
+                logger.warning(f"Could not delete job {scan.job_name}: {e}")
+    
+    # Delete vulnerabilities (cascade should handle this, but being explicit)
+    db.query(Vulnerability).filter(Vulnerability.scan_id == scan_id).delete()
+    
+    # Delete the scan
+    db.delete(scan)
+    db.commit()
+    
+    logger.info(f"Deleted scan {scan_id}")
+    return {"message": f"Scan {scan_id} deleted successfully", "job_name": scan.job_name}
+
+
 @app.get("/scan/{scan_id}/vulnerabilities", response_model=List[VulnerabilityResponse], tags=["Scans"])
 async def get_scan_vulnerabilities(
     scan_id: int,
