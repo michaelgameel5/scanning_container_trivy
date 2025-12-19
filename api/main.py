@@ -31,7 +31,7 @@ from typing import List, Optional
 from fastapi import FastAPI, Depends, HTTPException, Query
 from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy.orm import Session
-from sqlalchemy import func
+from sqlalchemy import func, text
 
 # Kubernetes client for dynamic Job creation
 from kubernetes import client, config
@@ -170,7 +170,7 @@ async def health_check(db: Session = Depends(get_db)):
     """
     try:
         # Test database connection
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         return HealthResponse(
             status="healthy",
             database="connected",
@@ -188,7 +188,7 @@ async def readiness_check(db: Session = Depends(get_db)):
     Returns 200 only when the application is ready to accept traffic.
     """
     try:
-        db.execute("SELECT 1")
+        db.execute(text("SELECT 1"))
         return {"status": "ready"}
     except Exception:
         raise HTTPException(status_code=503, detail="Not ready")
