@@ -106,7 +106,7 @@ metadata:
     app: vuln-scanner
     component: api
 spec:
-  replicas:3  # Multiple replicas for availability
+  replicas: 3  # Multiple replicas for availability
   selector:
     matchLabels:
       app: vuln-scanner
